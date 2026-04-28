@@ -5,8 +5,10 @@ the first/last bars. No library, no Delta storage. Just URL → JSON →
 DataFrame → print.
 """
 import httpx
-from datetime import datetime
+from datetime import datetime, UTC
 import polars as pl
+from quantlake.config import BRONZE_ROOT
+from quantlake.storage import upsert
 
 
 def fetch_klines(symbol, start, end, interval="1m"):
@@ -52,7 +54,17 @@ def fetch_klines(symbol, start, end, interval="1m"):
     )
 
 
-df = fetch_klines("BTCUSDT", datetime(2025, 1, 1), datetime(2025, 1, 2))
-print(df.head())
-print(df.tail())
-print(f"Rows: {len(df)}")
+df = fetch_klines("BTCUSDT", datetime(2025, 2, 17, tzinfo=UTC),
+                  datetime(2025, 2, 18, tzinfo=UTC))
+
+df = df.with_columns(
+    pl.lit("BTCUSDT").alias("symbol"),
+    pl.col("timestamp").dt.year().cast(pl.Int32).alias("year"),
+    pl.col("timestamp").dt.month().cast(pl.Int8).alias("month"),
+)
+
+print(f"{BRONZE_ROOT}/test_table")
+
+upsert(df, f"{BRONZE_ROOT}/test_table")
+
+
