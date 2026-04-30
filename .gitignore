@@ -183,3 +183,4 @@ cython_debug/
 # Personnal
 .DS_store
 poetry.lock
+data/
