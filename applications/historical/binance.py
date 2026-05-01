@@ -1,15 +1,10 @@
-"""End of video 2.2 — historical bootstrap for Binance top-10 spot OHLCV.
+"""End of video 3.1 — historical bootstrap modified to populate silver.
 
-Bulk archives cover up to the last complete month; REST fills the
-current (incomplete) month. Re-running is safe — Delta merges on
-(symbol, timestamp), bulk and REST share the same schema.
+Two lines added vs v0.2.2 (one after each bronze.ingest):
+    silver.ingest(df, TABLE)
 
-Note: silver.ingest is NOT called here yet. The silver layer is
-introduced in Module 3.1 — this script will be amended at v3.1 to add
-the pass-through to silver. Until then, only bronze is populated.
-
-Usage:
-    poetry run python applications/historical/binance.py
+Now both bronze AND silver are populated by the bootstrap. Re-running
+is still safe — both layers merge on (symbol, timestamp).
 """
 import sys
 from datetime import datetime, timedelta, timezone
@@ -18,12 +13,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import quantlake.bronze.ingest as bronze
+import quantlake.silver.ingest as silver
+
 from quantlake.bronze.connectors.binance_spot_bulk import BinanceSpotOHLCVBulkConnector
 from quantlake.bronze.connectors.binance_spot_rest import BinanceSpotOHLCVRestConnector
 from symbols import TOP10
 
 
-BULK_START = datetime(2024, 1, 1, tzinfo=timezone.utc)
+BULK_START = datetime(2017, 2, 1, tzinfo=timezone.utc)
+TABLE = BinanceSpotOHLCVBulkConnector.TABLE_NAME
 
 bulk = BinanceSpotOHLCVBulkConnector(timeframe="1m")
 rest = BinanceSpotOHLCVRestConnector(timeframe="1m")
@@ -36,10 +34,12 @@ def _ingest(symbol: str) -> None:
 
     print(f"[{symbol}] bulk {BULK_START.date()} → {bulk_end.date()}")
     df = bronze.ingest(bulk, symbol=symbol, start=BULK_START, end=bulk_end)
+    df_clean = silver.ingest(df, TABLE)
     print(f"[{symbol}]   bulk → {len(df):,} rows")
 
     print(f"[{symbol}] REST {rest_start.date()} → now")
     df = bronze.ingest(rest, symbol=symbol, start=rest_start, end=now)
+    df_clean = silver.ingest(df, TABLE)
     print(f"[{symbol}]   REST → {len(df):,} rows")
 
 
