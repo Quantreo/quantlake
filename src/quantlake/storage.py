@@ -20,16 +20,21 @@ from deltalake import DeltaTable, write_deltalake
 PARTITION_BY = ["symbol", "year", "month"]
 MERGE_PREDICATE = ("s.timestamp = t.timestamp AND s.symbol = t.symbol AND s.year = t.year AND s.month = t.month")
 
-def upsert(df: pl.DataFrame, table_path: str) -> None:
-    """Merge df into the Delta table at table_path, or create on first write."""
+
+def upsert(df: pl.DataFrame, table_path: str, update_matched: bool = False) -> None:
+    """Merge df into the Delta table at table_path, or create it on first write.
+
+    update_matched=True lets gold overwrite partial bars saved by a prior batch run
+    (useful when the live stream completes a TF bar that batch had saved early).
+    """
     if DeltaTable.is_deltatable(table_path):
-        (
-            DeltaTable(table_path).merge(
-                df.to_arrow(),
-                predicate=MERGE_PREDICATE,
-                source_alias="s",
-                target_alias="t",
-            )
-        ).when_not_matched_insert_all().execute()
+        merge = (
+            DeltaTable(table_path)
+            .merge(df.to_arrow(), predicate=MERGE_PREDICATE, source_alias="s", target_alias="t")
+            .when_not_matched_insert_all()
+        )
+        if update_matched:
+            merge = merge.when_matched_update_all()
+        merge.execute()
     else:
         write_deltalake(table_path, df, mode="overwrite", partition_by=PARTITION_BY)
