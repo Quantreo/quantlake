@@ -1,12 +1,9 @@
 """End of v0.5.1 - Capital.com REST historical bootstrap.
 
-Writes bronze/capitalcom_ohlcv only. Single-source, resumable, idempotent.
-A composite silver (silver/macro_ohlcv mixing Capital + Dukascopy) comes
-in v0.5.4.
+Walks through MACRO_INSTRUMENTS, resumes from last_bronze_ts, fetches
+the gap, partitions and saves.
 
-Re-running is safe (Delta merge on (symbol, timestamp)).
-
-Usage:
+Run:
     poetry run python applications/historical/capital.py
 """
 import sys
@@ -17,45 +14,25 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import quantlake.bronze.ingest as bronze
 from quantlake.bronze.connectors.capital_rest import CapitalComOHLCVRestConnector
-from symbols import MACRO_INSTRUMENTS, MacroInstrument
+from symbols import MACRO_INSTRUMENTS
 
-CAPITAL_START = datetime(2026, 1, 1, tzinfo=timezone.utc)
+CAPITAL_START = datetime(2026, 5, 3, tzinfo=timezone.utc)
 TABLE = CapitalComOHLCVRestConnector.TABLE_NAME
 
+connector = CapitalComOHLCVRestConnector(timeframe="1m")
+now = datetime.now(timezone.utc)
 
-def _resume_start(symbol: str) -> datetime:
-    last = bronze.last_bronze_ts(TABLE, symbol)
-    return last + timedelta(minutes=1) if last else CAPITAL_START
-
-
-def _ingest(inst: MacroInstrument, connector: CapitalComOHLCVRestConnector) -> None:
-    now = datetime.now(timezone.utc)
-    start = _resume_start(inst.symbol)
+for inst in MACRO_INSTRUMENTS:
+    last = bronze.last_bronze_ts(TABLE, inst.symbol)
+    start = last + timedelta(minutes=1) if last else CAPITAL_START
     if start >= now:
         print(f"[{inst.symbol}] up to date")
-        return
+        continue
 
-    print(f"[{inst.symbol}] {start.isoformat(timespec='minutes')} -> now ({inst.capital})")
     df = connector.fetch(symbol=inst.capital, start=start, end=now)
     if df.is_empty():
-        print(f"[{inst.symbol}]   -> no new rows")
-        return
+        continue
 
     df = bronze.add_partition_columns(df, symbol=inst.symbol)
     bronze.save(df, TABLE)
-    print(f"[{inst.symbol}]   -> {len(df):,} rows")
-
-
-connector = CapitalComOHLCVRestConnector(timeframe="1m")
-for inst in MACRO_INSTRUMENTS:
-    try:
-        _ingest(inst, connector)
-    except Exception as e:
-        print(f"[{inst.symbol}] ERROR: {e}")
-print("\nDone.")
-
-
-
-
-
-
+    print(f"[{inst.symbol}] {len(df):,} rows")
