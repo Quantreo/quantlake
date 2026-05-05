@@ -1,8 +1,8 @@
 import polars as pl
 from deltalake import DeltaTable
 
-PATH = "data/gold/top_10_momentum_crypto/5m"
-SYMBOL = "BTCUSDT"
+PATH = "data/gold/fx/1h"
+SYMBOL = "EURUSD"
 
 df = pl.from_arrow(
     DeltaTable(PATH).to_pyarrow_table(filters=[("symbol", "=", SYMBOL)])
