@@ -36,8 +36,8 @@ MACRO_INSTRUMENTS = [
     MacroInstrument("EURUSD", "EURUSD",     "EURUSD",    100_000.0),
     MacroInstrument("GBPUSD", "GBPUSD",     "GBPUSD",    100_000.0),
     MacroInstrument("XAUUSD", "XAUUSD",     "GOLD",        1_000.0),
-    MacroInstrument("SPX500", "USA500.IDX", "US500",       1_000.0),
-    MacroInstrument("WTI",    "LIGHT.CMD",  "OIL_CRUDE",   1_000.0),
+    MacroInstrument("SPX500", "USA500IDXUSD", "US500",       1_000.0),
+    MacroInstrument("WTI",    "LIGHTCMDUSD",  "OIL_CRUDE",   1_000.0),
     # Wheat CFD - no Dukascopy history available; lives on Capital-only.
     MacroInstrument("WHEAT",  "",           "WHEAT",       1_000.0),
 ]
