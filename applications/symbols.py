@@ -42,6 +42,7 @@ MACRO_INSTRUMENTS = [
     MacroInstrument("WHEAT",  "",           "WHEAT",       1_000.0),
 ]
 
+FRED_SERIES = ["DGS10", "DGS2", "T10Y2Y", "DFF", "T10YIE"]
 
 
 
