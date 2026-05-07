@@ -7,9 +7,13 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from quantlake.silver.ohlcv import clean_ohlcv
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import quantlake.bronze.ingest as bronze
+from quantlake.silver import merge
+
 from quantlake.bronze.connectors.dune import DuneQueryConnector
 from dotenv import load_dotenv
 
@@ -34,8 +38,7 @@ connector = DuneQueryConnector(
     },
 )
 
-last = bronze.last_bronze_ts(TABLE, SYMBOL)
-start = last + timedelta(hours=1) if last else datetime(2020, 1, 1, tzinfo=timezone.utc)
+start = datetime(2020, 1, 1, tzinfo=timezone.utc)
 now = datetime.now(timezone.utc)
 
 if start >= now:
@@ -45,6 +48,7 @@ else:
     if not df.is_empty():
         df = bronze.add_partition_columns(df, symbol=SYMBOL)
         bronze.save(df, TABLE)
+        merge.save_eth_gas((clean_ohlcv(df)))
         print(f"[{SYMBOL}] {len(df):,} rows ingested")
 
 
