@@ -45,4 +45,19 @@ MACRO_INSTRUMENTS = [
 FRED_SERIES = ["DGS10", "DGS2", "T10Y2Y", "DFF", "T10YIE"]
 
 
+# US winter wheat belt centroids - aimed at agricultural zones rather
+# than state geographical centers.
+WHEAT_STATES = {
+    "KS": (38.5, -98.0),
+    "OK": (35.5, -97.5),
+    "TX": (32.0, -100.0),
+    "CO": (39.0, -105.5),
+    "MT": (47.0, -109.5),
+    "ND": (47.5, -100.5),
+    "SD": (44.5, -100.0),
+    "NE": (41.5, -99.5),
+    "WA": (47.5, -120.5),
+    "ID": (44.0, -114.5),
+}
+
 
