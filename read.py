@@ -1,7 +1,7 @@
 import polars as pl
 from deltalake import DeltaTable
 
-PATH = "data/gold/macro/1h"
+PATH = "data/gold/wheat_stress/1d"
 
 df = pl.from_arrow(
     DeltaTable(PATH).to_pyarrow_table())
