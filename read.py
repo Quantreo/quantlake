@@ -1,12 +1,13 @@
 import polars as pl
 from deltalake import DeltaTable
 
-PATH = "data/gold/wheat_stress/1d"
+PATH = "data/gold/ml_based_strategy/5m"
 
-df = pl.from_arrow(
-    DeltaTable(PATH).to_pyarrow_table())
+df = (
+    pl.from_arrow(DeltaTable(PATH).to_pyarrow_table())
+    .select("timestamp", "close", "ml_signal")
+    .sort("timestamp")
+)
 
-print(df.head())
-print(df.tail())
+print(df.tail(20))
 print(f"\nRows: {len(df):,}")
-print(f"Schema: {df.schema}")
