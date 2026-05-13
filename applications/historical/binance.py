@@ -20,7 +20,7 @@ from quantlake.bronze.connectors.binance_spot_rest import BinanceSpotOHLCVRestCo
 from symbols import TOP10
 
 
-BULK_START = datetime(2017, 2, 1, tzinfo=timezone.utc)
+BULK_START = datetime(2026, 2, 1, tzinfo=timezone.utc)
 TABLE = BinanceSpotOHLCVBulkConnector.TABLE_NAME
 
 bulk = BinanceSpotOHLCVBulkConnector(timeframe="1m")

@@ -1,0 +1,1 @@
+"""Dashboard backend — FastAPI app serving Delta tables to the React UI."""
