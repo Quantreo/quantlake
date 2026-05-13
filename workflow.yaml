@@ -1,0 +1,194 @@
+# QuantLake — data pipeline manifest.
+#
+# One source of truth for the bronze → silver → gold DAG. Each table declares
+# where its rows come from (`from`) and which transforms were applied. The
+# dashboard renders this as a workflow graph so students can see the whole
+# pipeline at a glance.
+#
+# Conventions:
+#   - `from` is a list of upstream table keys in the form "<layer>/<name>"
+#   - `transforms` is a list of short human-readable steps (course material)
+#   - Edit this file whenever you add/change a table; no other wiring needed
+
+sources:
+  binance:
+    type: exchange (crypto spot)
+    modes: [websocket, rest, bulk]
+    docs: https://binance-docs.github.io/apidocs/spot/
+  dukascopy:
+    type: FX / commodity / index datafeed (spot-like)
+    modes: [rest-bulk]
+    docs: https://www.dukascopy.com/swiss/english/marketwatch/historical/
+  capitalcom:
+    type: CFD broker (FX, indices, commodities)
+    modes: [websocket, rest]
+    docs: https://open-api.capital.com/
+  fred:
+    type: macro time series (Federal Reserve)
+    modes: [rest]
+    docs: https://fred.stlouisfed.org/docs/api/fred/
+  dune:
+    type: on-chain analytics
+    modes: [rest]
+    docs: https://dune.com/docs/api/
+  owlracle:
+    type: ETH gas (current snapshot, free) + history (paid)
+    modes: [rest]
+    docs: https://owlracle.info/docs
+  open_meteo:
+    type: weather (historical reanalysis + forecast)
+    modes: [rest]
+    docs: https://open-meteo.com/en/docs
+  usda_nass:
+    type: US agricultural statistics (planted acres, yields)
+    modes: [rest]
+    docs: https://quickstats.nass.usda.gov/api
+
+bronze:
+  binance_spot_ohlcv:
+    source: binance
+    grain: 1m
+    partition: [symbol, year, month]
+    notes: raw 1m OHLCV bars, idempotent via Delta merge on (symbol, timestamp)
+
+  capitalcom_ohlcv:
+    source: capitalcom
+    grain: 1m
+    partition: [symbol, year, month]
+    notes: raw 1m OHLCV from Capital.com (mid price + spreads)
+
+  dukascopy_ohlcv:
+    source: dukascopy
+    grain: 1m
+    partition: [symbol, year, month]
+    notes: raw 1m OHLCV from Dukascopy .bi5 daily files (bid + ask → mid)
+
+  fred:
+    source: fred
+    grain: series-dependent (daily / monthly)
+    partition: [symbol, year, month]
+    notes: |
+      macro observations, one row per release. Timestamps stamped at the
+      actual release time in US Eastern (DST-aware), converted to UTC.
+      symbol = FRED series id (e.g. T10Y2Y, DGS10).
+
+  dune_ethereum:
+    source: dune
+    grain: 1h
+    partition: [symbol, year, month]
+    notes: ETH gas OHLC in gwei, pulled from a saved Dune query
+
+  owlracle_eth_gas:
+    source: owlracle
+    grain: per-minute snapshot
+    partition: [symbol, year, month]
+    notes: |
+      one row per /gas snapshot (free endpoint). Resampled to 1h OHLC
+      by the live script when each hour closes. No /history calls —
+      that endpoint is paid.
+
+  open_meteo:
+    source: open_meteo
+    grain: 1d
+    partition: [symbol, year, month]
+    notes: |
+      daily temp_max / temp_min / precip / wind_speed_max per location.
+      symbol = US state code for the wheat-stress pipeline (KS, OK, TX…).
+      Historical via /archive (ERA5, 1940→); live via /forecast.
+
+  usda_nass_planted:
+    source: usda_nass
+    grain: 1y
+    partition: [symbol, year, month]
+    notes: |
+      annual planted acres per (commodity, class, state). One row per
+      state per year, timestamped at the approximate NASS release
+      date so downstream joins respect publication vintage.
+      symbol = f"{commodity}_{class}_{state}" (e.g. WHEAT_WINTER_KS).
+
+silver:
+  binance_spot_ohlcv:
+    from: [bronze/binance_spot_ohlcv]
+    transforms:
+      - replace inf / -inf with NaN on Float64 columns
+      - replace null with NaN on Float64 columns
+      - invalidate bars where high < low or low < 0
+      - invalidate negative volumes
+
+  fred:
+    from: [bronze/fred]
+    transforms:
+      - replace inf / -inf with NaN
+      - null → NaN on value column
+
+  macro_ohlcv:
+    from: [bronze/dukascopy_ohlcv, bronze/capitalcom_ohlcv]
+    transforms:
+      - compute offset = median(capital_close - dukascopy_close) on 1m overlap
+      - shift dukascopy prices by +offset so the timeline sits on Capital's scale
+      - project to canonical schema (drops volume — incompatible units across sources)
+      - Delta merge on (symbol, timestamp); Capital takes the recent tail, Dukascopy primes the historical
+      - offsets persisted to data/macro_offsets.json
+
+  eth_gas:
+    from: [bronze/dune_ethereum, bronze/owlracle_eth_gas]
+    transforms:
+      - Dune (historical) writes 1h OHLC directly
+      - Owlracle (live) snapshots resampled into 1h OHLC at each hour boundary
+      - truncate timestamps to 1h before upsert (hour-aligned keys)
+      - Delta merge on (symbol, timestamp)
+
+  crop_weather:
+    from: [bronze/open_meteo]
+    transforms:
+      - per-state 30d + 90d rolling precipitation sums
+      - climatology = per-state, per-day-of-year mean of precip_90d
+      - precip_anomaly_90d = (precip_90d - climatology) / climatology
+      - stress = -precip_anomaly_90d (drier → higher stress)
+
+  usda_nass_planted:
+    from: [bronze/usda_nass_planted]
+    transforms:
+      - passthrough (no OHLCV cleaning) — scalar annual values
+
+gold:
+  top_10_momentum_crypto/5m:
+    from: [silver/binance_spot_ohlcv]
+    transforms:
+      - resample 1m → 5m OHLCV (group_by_dynamic)
+      - per-symbol pipeline — 10 Binance spot majors
+      - Oryon features on close — SMA20, EMA20
+
+  eth_data/1h:
+    from: [silver/binance_spot_ohlcv, silver/eth_gas]
+    transforms:
+      - filter symbol = ETHUSDT
+      - resample 1m → 1h OHLCV
+      - as-of backward join silver/eth_gas onto each bar (gas_open/high/low/close)
+      - Oryon features on close — SMA20, EMA20
+
+  ml_based_strategy/5m:
+    from: [silver/binance_spot_ohlcv]
+    transforms:
+      - filter symbol = BTCUSDT
+      - resample 1m → 5m OHLCV
+      - features = last 5 5m close-to-close returns (stateful predictor, warmed by rebuild_from_silver)
+      - ml_signal = LogisticRegression.predict_proba (model.pkl trained in train.ipynb)
+      - ws variant broadcasts each new gold bar; consumer.py subscribes and prints what an executor would do
+
+  macro/1h:
+    from: [silver/macro_ohlcv, silver/fred]
+    transforms:
+      - filter symbol in (EURUSD, GBPUSD)
+      - resample 1m → 1h OHLCV (volume intentionally absent)
+      - as-of backward join T10Y2Y from silver/fred + age_hours feature
+      - Oryon features — SMA20/EMA20 on close, ShannonEntropy(50) + Skewness(50) on T10Y2Y
+
+  wheat_stress/1d:
+    from: [silver/crop_weather, silver/usda_nass_planted, silver/macro_ohlcv]
+    transforms:
+      - primary frame = silver/macro_ohlcv WHEAT resampled 1m → 1d OHLCV
+      - transform_gold joins stress_index (weighted mean of per-state stress) onto each bar
+      - weights use join_asof on NASS release timestamps — vintage-safe, no look-ahead
+      - Oryon features — SMA20/EMA20 on close, SMA30 on stress_index
+      - "live runner: Capital poll 1m (bronze + silver + build_live_bar) + Open-Meteo poll 1h (bronze + silver/crop_weather rebuild)"
