@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import quantlake.bronze.ingest as bronze
+import quantlake.silver.ingest as silver
 from quantlake.bronze.connectors.usda_nass import USDANassConnector
 from symbols import WHEAT_STATES
 
@@ -29,4 +30,5 @@ else:
     symbol = f"{COMMODITY}_{CLASS}"
     df = bronze.add_partition_columns(df, symbol=symbol)
     bronze.save(df, TABLE)
+    silver.save(df, TABLE)
     print(f"[{symbol}] {len(df):,} rows ingested ({len(WHEAT_STATES)} states x 15 years)")
